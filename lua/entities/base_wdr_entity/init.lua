@@ -3,52 +3,26 @@ AddCSLuaFile("shared.lua")
 
 include("shared.lua")
 
-ThinkInterval = 0.05
-
-if SERVER then
-	if CAF and CAF.GetAddon then
-		-- Resource Distribution 3+
-		RES_DISTRIB = true
-		RD = CAF.GetAddon("Resource Distribution")
-	else
-		RD = {}
-		RD.AddResource = RD_AddResource
-		RD.GetResourceAmount = RD_GetResourceAmount
-		RD.ConsumeResource = RD_ConsumeResource
-        end
-end
-
 -- Allow an antenna to query for tx power
 function ENT:TxDbw()
 	return self.gain + (math.log10(self.txwatts)*10)
 end
 
-function ENT:Setup(tx)
-	self.is_tx = tx
-
+function ENT:Setup()
+	self.txchannels = {} -- tx data
+	self.txwatts = 0 -- tx power
 	if WireAddon then
-		if self.is_tx then
-			self.Inputs = Wire_CreateInputs(self, {"On", "TxWatts", "BaseMHz", "Channel1", "Channel2", "Channel3", "Channel4"})
-			-- transmitters consume energy. 1 energy unit = 1 watt per second, 4 channels = 4 energy units (4 watts) per second
-			if RES_DISTRIB then RD.AddResource(self.Entity, "energy", 0) end
-		else -- if it's a receiver
-			self.Inputs = Wire_CreateInputs(self.Entity, {"BaseMHz"})
-			self.Outputs = Wire_CreateOutputs(self.Entity, {"Channel1", "Ch1_HasSignal", "Ch1_dBm",
-									 "Channel2", "Ch2_HasSignal", "Ch2_dBm",
-									 "Channel3", "Ch3_HasSignal", "Ch3_dBm",
-									 "Channel4", "Ch4_HasSignal", "Ch4_dBm"})
-		end
+		self.Inputs = Wire_CreateInputs(self, {"On", "BaseMHz", "TxEnable", "TxWatts", "Ch1", "Ch2", "Ch3", "Ch4"})
+		-- transmitters consume energy. 1 energy unit = 1 watt per second, 4 channels = 4 energy units (4 watts) per second
+		if CAF and CAF.GetAddon then CAF.GetAddon("Resource Distribution").AddResource(self, "energy", 0) end
+		self.Outputs = Wire_CreateOutputs(self, {"Ch1", "Ch1_HasSignal", "Ch1_dBm", "Ch2", "Ch2_HasSignal", "Ch2_dBm", "Ch3", "Ch3_HasSignal", "Ch3_dBm", "Ch4", "Ch4_HasSignal", "Ch4_dBm"})
 	else
 		print("Wire Directional Radio Kit requires the 'Wire' addon.\n")
 	end
 end
 
--- Can we transmit? (Got enough resources?)
-function ENT:CanTX()
-	if not self.is_tx or not (self.active == true) or not (self.txwatts > 0) then return false end
-	if not RES_DISTRIB then return true end
-
-	return (RD.GetResourceAmount(self, "energy") >= (self.txwatts * 4 * ThinkInterval))
+function ENT:OnDuplicated()
+	self:Setup()
 end
 
 -- Returns the background noise at this location in decibels relative to one milliwatt
@@ -59,91 +33,109 @@ function ENT:GetBgNoise()
 			firenoise = firenoise + 1000/self:GetPos():Distance(v:GetPos())
 		end
 	end
-	return math.random() + firenoise
+	return math.Rand(-1,1) + firenoise
 end
 
 -- this is called whenever a wire input changes value
 function ENT:TriggerInput(iname, value)
-	if self.is_tx then
-		if iname == "On" then
-			self.active = (value ~= 0)
-		elseif iname == "TxWatts" then
-			local m = GetConVarNumber("sv_wdrk_max_tx_power")
-			if value > m then
-				self.txwatts = m
-			elseif value <= 0 then
-				self.txwatts = 0
-			else
-				self.txwatts = value
-			end
-		elseif iname == "BaseMHz" then
-			-- someone has changed the base frequency, update the frequencies
-			-- of all the channels to be based on the new value
-			self.txchannels = {}
-			self.txchannels[self.Inputs.BaseMHz.Value + 2.5] = self.Inputs.Channel1.Value
-			self.txchannels[self.Inputs.BaseMHz.Value + 7.5] = self.Inputs.Channel2.Value
-			self.txchannels[self.Inputs.BaseMHz.Value + 12.5] = self.Inputs.Channel3.Value
-			self.txchannels[self.Inputs.BaseMHz.Value + 17.5] = self.Inputs.Channel4.Value
-		elseif iname == "Channel1" then
-			self.txchannels[self.Inputs.BaseMHz.Value + 2.5] = value
-		elseif iname == "Channel2" then
-			self.txchannels[self.Inputs.BaseMHz.Value + 7.5] = value
-		elseif iname == "Channel3" then
-			self.txchannels[self.Inputs.BaseMHz.Value + 12.5] = value
-		elseif iname == "Channel4" then
-			self.txchannels[self.Inputs.BaseMHz.Value + 17.5] = value
+	if iname == "TxWatts" then
+		local m = GetConVarNumber("sv_wdrk_max_tx_power")
+		if value > m then
+			self.txwattsW = m
+		elseif value <= 0 then
+			self.txwattsW = 0
+		else
+			self.txwattsW = value
 		end
-	end
-end
-
-function ENT:Randomize()
-	for i=1, 4 do
-		local c = tostring(i)
-		Wire_TriggerOutput(self.Entity, "Channel" .. c, math.random() * 10)
-		Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_HasSignal", 0)
-		Wire_TriggerOutput(self.Entity, "Ch" .. c .. "_dBm", -math.random()*1000)
+	elseif iname == "TxEnable" then
+		for i=1,4 do
+			Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i), 0)
+			Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_HasSignal", 0)
+			Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_dBm", 0)
+		end
+	elseif iname == "BaseMHz" then
+		-- someone has changed the base frequency, update the frequencies
+		-- of all the channels to be based on the new value
+		self.txchannels = {}
+		self.txchannels[self.Inputs.BaseMHz.Value + 2.5] = self.Inputs.Ch1.Value
+		self.txchannels[self.Inputs.BaseMHz.Value + 7.5] = self.Inputs.Ch2.Value
+		self.txchannels[self.Inputs.BaseMHz.Value + 12.5] = self.Inputs.Ch3.Value
+		self.txchannels[self.Inputs.BaseMHz.Value + 17.5] = self.Inputs.Ch4.Value
+	elseif iname == "Ch1" then
+		self.txchannels[self.Inputs.BaseMHz.Value + 2.5] = value
+	elseif iname == "Ch2" then
+		self.txchannels[self.Inputs.BaseMHz.Value + 7.5] = value
+	elseif iname == "Ch3" then
+		self.txchannels[self.Inputs.BaseMHz.Value + 12.5] = value
+	elseif iname == "Ch4" then
+		self.txchannels[self.Inputs.BaseMHz.Value + 17.5] = value
 	end
 end
 
 function ENT:Think()
-	if not WireAddon then return end
-
-	if self:CanTX() then
-		if RES_DISTRIB then
-			local amt = RD.GetResourceAmount(self, "energy")
-			
-			if amt < (self.txwatts * 4 * ThinkInterval) then
-				RD.ConsumeResource(self, "energy", amt)
-			else
-				RD.ConsumeResource(self, "energy", (self.txwatts * 4 * ThinkInterval))
-			end
+	if not WireAddon or not (self.Inputs.On.Value ~= 0) then
+		self.txwatts = 0
+		for i=1,4 do
+			Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i), 0)
+			Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_HasSignal", 0)
+			Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_dBm", 0)
 		end
-
-		if self.txwatts >= 200 then
-			local e = ents.FindInCone(self:GetPos(), self:GetForward(), self.txwatts/5, self.beamWidth)
-			
+		self:NextThink( CurTime() + 1 )
+		return true
+	end
+	
+	if (self.Inputs.TxEnable.Value ~= 0) then
+		if CAF and CAF.GetAddon then
+			local amt = CAF.GetAddon("Resource Distribution").GetResourceAmount(self, "energy")
+			if amt < (self.txwattsW * 4) then
+				CAF.GetAddon("Resource Distribution").ConsumeResource(self, "energy", amt)
+				self.txwatts = (amt/(self.txwattsW * 4))
+			else
+				CAF.GetAddon("Resource Distribution").ConsumeResource(self, "energy", (self.txwatts * 4))
+				self.txwatts = self.txwattsW
+			end
+			self.istxing = true
+		else
+			self.txwatts = self.txwattsW
+		end
+		if GetConVarNumber("sv_wdrk_damage_enabled") and self.txwatts >= GetConVarNumber("sv_wdrk_damage_watt_threshold") then
+			local e = ents.FindInCone(self:GetPos(), self:GetForward(), self.txwatts/5, self.beamWidth)	-- This will never work, as garry broke findincone long long ago...
 			for k, v in pairs(e) do
 				if v:IsPlayer() then v:TakeDamage(self.txwatts / 500 + (100/self:GetPos():Distance(v:GetPos())), self) end
 			end
 		end
+		self:NextThink( CurTime() + 1 )
+		return true
+	else
+		self.txwatts = 0
 	end
-
 	-- Find all antennas on the map
 	local ants = ents.FindByClass("ra_*")
 
 	-- Lists of discovered transmitters
 	local txs = {}
-
-	-- Loss due to angle offset
-	local angleloss = 0
-
-	-- Loss due to polarity skew
-	local skewloss = 0
+	
+	--spectrum
+	local spectrum = {}
 
 	-- If we found antennas
 	if ants and #ants > 0 then
-		for k, v in pairs(ants) do
+		for _, v in pairs(ants) do
+			if v.txwatts <=0 then continue end
+			table.insert(txs, v)
+		end
 
+		local noise = self:GetBgNoise()
+		
+		for k, v in pairs(txs) do
+			-- Loss due to angle offset
+			local angleloss = 0
+			-- Loss due to polarity skew
+			local skewloss = 0
+		
+			local dist = self:GetPos():Distance(v:GetPos()) * GetConVarNumber("sv_wdrk_scale")
+			local dBm = (math.log10((10^(v:TxDbw()/10)) / (4 * math.pi * dist * dist)) * 10) + 30
+			
 			-- Find the vector from the receiver to the transmitter and vice-versa
 			local vecToTx = v:GetPos() - self:GetPos()
 			local vecFromTx = self:GetPos() - v:GetPos()
@@ -166,50 +158,26 @@ function ENT:Think()
 				
 				skewloss = math.abs(math.sin(math.rad(v:GetAngles().r) - math.rad(self:GetAngles().r) + skew) * 20)
 			end
-
+			
 			local onedir = math.abs(math.acos(normVectToTx:DotProduct(myAngle)))
 			local otherdir = math.abs(math.acos(txAngle:DotProduct(normVectFromTx)))
-
-			angleloss = (onedir + otherdir) * 30
-
-			-- Calculate the received signal strength (strength + self.gain)
+			
 			-- If this transmitter is operational, within our field of vision, and we are within its beam
-			if v:CanTX() and math.deg(onedir) <= (self.beamWidth/2.0) and math.deg(otherdir) <= (v.beamWidth/2.0) then
-				table.insert(txs, v)
+			if not (math.deg(onedir) <= (self.beamWidth/2.0) and math.deg(otherdir) <= (v.beamWidth/2.0)) then continue end
+			
+			if self.beamWidth ~= 360 and v.beamWidth == 360 then
+				angleloss = (onedir) * 30
+			elseif self.beamWidth == 360 and v.beamWidth ~= 360 then
+				angleloss = (otherdir) * 30
+			elseif self.beamWidth ~= 360 and v.beamWidth ~= 360 then
+				angleloss = (onedir + otherdir) * 30
 			end
-		end
-
-		local spectrum = {}
-
-		if #txs == 0 then
-			self:Randomize()
-			return
-		end
-
-		for k, v in pairs(txs) do
-			local dist = self:GetPos():Distance(v:GetPos()) / GetConVarNumber("sv_wdrk_scale")
-			local dBm = (math.log10((10^(v:TxDbw()/10)) / (4 * math.pi * dist * dist)) * 10) + 30
+			
+			-- Calculate the received signal strength (strength + self.gain)
+			dBm = math.Clamp(dBm + self.gain - angleloss - skewloss,GetConVarNumber("sv_wdrk_rx_sensitivity_threshold")+noise,math.huge)
+			
 			for freq, signal in pairs(v.txchannels) do
-				if spectrum[freq] == nil then
-					spectrum[freq] = {}
-					spectrum[freq][dBm] = signal
-				else
-					for sfreq, stable in pairs(spectrum) do
-						if freq == sfreq then
-							stable[dBm] = signal
-						end
-					end
-				end
-			end
-		end
-
-		-- The set of channels that have detected a signal
-		local setset = {false, false, false, false}
-
-		for freq, t in pairs(spectrum) do
-			-- Are any of my receiving frequencies in this table?
-			if freq >= self.Inputs.BaseMHz.Value and freq < self.Inputs.BaseMHz.Value + 40 then
-
+			
 				-- Allow for signal loss due to misaligned tuner frequency
 				local driftloss = 0 -- dB
 				local choffset = freq - self.Inputs.BaseMHz.Value
@@ -222,7 +190,26 @@ function ENT:Think()
 				elseif choffset >= 15 and choffset < 20 then
 					driftloss = 10 * math.abs(17.5 - choffset)
 				end
-
+				dBm = math.Clamp(dBm - driftloss,GetConVarNumber("sv_wdrk_rx_sensitivity_threshold")+noise,math.huge)
+				
+				if spectrum[freq] == nil then
+					spectrum[freq] = {}
+					spectrum[freq][dBm] = signal
+				else
+					for sfreq, stable in pairs(spectrum) do
+						if freq == sfreq then
+							stable[dBm] = signal
+						end
+					end
+				end
+			end
+		end
+		-- The set of channels that have detected a signal
+		local setset = {false, false, false, false}
+		for freq,_ in pairs(spectrum) do
+			-- Are any of my receiving frequencies in this table?
+			if freq >= self.Inputs.BaseMHz.Value and freq < self.Inputs.BaseMHz.Value + 40 then
+				
 				-- Initialize the signal and the strength
 				local sig, dBm = 0, -100
 				-- Count the number of received signals on this frequency
@@ -230,7 +217,7 @@ function ENT:Think()
 
 				if count == 1 then
 					for k, v in pairs(spectrum[freq]) do dBm = k; sig = v; end
-				elseif count > 1 then
+					elseif count > 1 then
 					-- Initialize the strongest and second strongest received signals on this frequency
 					local top = -999 -- dBm
 					local lower = -1000 -- dBm
@@ -246,15 +233,13 @@ function ENT:Think()
 					sig = spectrum[freq][top]
 				end
 
-				dBm = dBm + self.gain - driftloss - angleloss - skewloss - self:GetBgNoise()
-
 				local signalLock = 1
+				if dBm <= GetConVarNumber("sv_wdrk_rx_sensitivity_threshold")+noise then signalLock = 0 end
+				if signalLock == 0 then continue end
 
 				-- If the received signal after noise is less than the receiver's sensitivity threshold, then the data received is just random noise
-				if dBm < GetConVarNumber("sv_wdrk_rx_sensitivity_threshold") then
-					sig = math.random() * 1000
-					signalLock = 0
-				end
+				local modif = (dBm/(GetConVarNumber("sv_wdrk_rx_sensitivity_threshold")+noise))^10
+				sig = sig + math.Rand(0.51*modif,-0.51*modif)
 
 				local receiveCh = 0
 
@@ -270,7 +255,7 @@ function ENT:Think()
 
 				if receiveCh ~= 0 then
 					local c = tostring(receiveCh)
-					Wire_TriggerOutput(self.Entity, "Channel" .. c, sig)
+					Wire_TriggerOutput(self.Entity, "Ch" .. c, sig)
 					Wire_TriggerOutput(self.Entity, "Ch" .. c .. "_HasSignal", signalLock)
 					Wire_TriggerOutput(self.Entity, "Ch" .. c .. "_dBm", dBm)
 					setset[receiveCh] = true
@@ -281,11 +266,12 @@ function ENT:Think()
 		-- set the remaining channels randomly
 		for i=1,4 do
 			if not setset[i] then
-				Wire_TriggerOutput(self.Entity, "Channel" .. tostring(i), math.random() * 10)
+				Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i), noise)
 				Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_HasSignal", 0)
-				Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_dBm", -math.random()*1000)
+				Wire_TriggerOutput(self.Entity, "Ch" .. tostring(i) .. "_dBm", GetConVarNumber("sv_wdrk_rx_sensitivity_threshold")+noise)
 			end
 		end
 	end
-	self.Entity:NextThink(CurTime() + ThinkInterval)
+	self:NextThink( CurTime() )
+	return true
 end

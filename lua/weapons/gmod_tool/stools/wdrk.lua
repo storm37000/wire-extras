@@ -3,51 +3,47 @@ TOOL.Name = "#Directional Radio Tool"
 TOOL.Command = nil
 TOOL.ConfigName = ""
 TOOL.ClientConVar[ "model" ] = "models/radio/ra_small_omni.mdl"
-TOOL.ClientConVar[ "tx" ] = 1
-TOOL.ClientConVar[ "freeze" ] = 0
+--TOOL.ClientConVar[ "tx" ] = 0
+TOOL.ClientConVar[ "freeze" ] = 1
 
 if CLIENT then
-    language.Add("tool.wdrk.name", "Wire Directional Radio Kit")
-    language.Add("tool.wdrk.desc", "Spawn Directional Radio Antennae")
-    language.Add("tool.wdrk.0", "Left-click: Spawn a Wire Directional Radio Antenna")
-    language.Add("Undone_wdrk", "Undone Wire Directional Radio Antenna")
-    language.Add("Cleanup_wdrk", "Wire Directional Radio Antennae")
-    language.Add("Cleaned_wdrk", "Removed all Wire Directional Radio Antennae")
-    language.Add("sboxlimit_wdrk", "Wire Directional Radio Antennae limit already reached!")
+	language.Add("tool.wdrk.name", "Wire Directional Radio Kit")
+	language.Add("tool.wdrk.desc", "Spawn Directional Radio Antennae")
+	language.Add("tool.wdrk.0", "Left-click: Spawn a Wire Directional Radio Antenna")
+	language.Add("Undone_wdrk", "Undone Wire Directional Radio Antenna")
+	language.Add("Cleanup_wdrk", "Wire Directional Radio Antennae")
+	language.Add("Cleaned_wdrk", "Removed all Wire Directional Radio Antennae")
+	language.Add("sboxlimit_wdrk", "Wire Directional Radio Antennae limit already reached!")
 end
 
 if SERVER then
 	CreateConVar("sbox_maxwdrk", 10)
 
-	function MakeRadioPart(ply, Ang, Pos, model, trace, tx, freeze)
+	function MakeRadioPart(ply, Ang, Pos, model, trace, freeze)
+		if not ply:CheckLimit("wdrk") then return false end
+		local tmpitem = model:gsub("models/radio/", "")
+		local itemclass = tmpitem:gsub(".mdl", "")
+		local ent = ents.Create(itemclass)
+		--ent.is_tx = tx
+		ent:SetPos(Pos)
+		ent:SetAngles(Ang)
+		ent:Spawn()
+		ent:Setup()
+		ent:Activate()
 
-                if not ply:CheckLimit("wdrk") then return false end
+		if freeze then
+			local phys = ent:GetPhysicsObject()
+			if phys:IsValid() then
+				phys:EnableMotion(false)
+				ply:AddFrozenPhysicsObject(ent, phys)
+			end
+		end
 
-                local tmpitem = model:gsub("models/radio/", "")
-                local itemclass = tmpitem:gsub(".mdl", "")
-
-                local ent = ents.Create(itemclass)
-                ent:Setup(tx)
-                ent:SetPos(Pos)
-                ent:SetAngles(Ang)
-                ent:SetNWString("Owner", ply:Nick())
-                ent:Spawn()
-                ent:Activate()
-
-                if freeze then
-                        local phys = ent:GetPhysicsObject()
-                        if phys:IsValid() then
-                                phys:EnableMotion(false)
-                                ply:AddFrozenPhysicsObject(ent, phys)
-                        end
-                end
-
-                ply:AddCount("wdrk", ent)
-
-                duplicator.RegisterEntityClass(ent, MakeRadioPart, "Ang", "Pos", "model", "trace", "tx", "freeze")
-
-                return ent
-        end
+		ply:AddCount("wdrk", ent)
+				
+		return ent
+	end
+	--duplicator.RegisterEntityClass("base_wdr_entity", MakeRadioPart, "Ang", "Pos", "model", "trace", "freeze") -->>>>>>>>>>>> THIS IS USELESS AND DOESNT WORK... WHY GARRY WHYYYYY
 end
 
 cleanup.Register("wdrk")
@@ -58,7 +54,7 @@ function TOOL:LeftClick(trace)
 
 	local ply = self:GetOwner()
 	local model = self:GetClientInfo("model")
-	local tx = self:GetClientNumber("tx") ~= 0
+	--local tx = self:GetClientNumber("tx") ~= 0
 	local freeze = self:GetClientNumber("freeze") ~= 0
 
 	if trace.Entity:IsValid() && string.find(trace.Entity:GetClass(), "^ra_") && trace.Entity.pl == ply then return true end
@@ -70,7 +66,7 @@ function TOOL:LeftClick(trace)
 	local Ang = trace.HitNormal:Angle()
 	Ang.pitch = Ang.pitch + 90
 
-	local radio_item = MakeRadioPart(ply, Ang, trace.HitPos, model, trace, tx, freeze)
+	local radio_item = MakeRadioPart(ply, Ang, trace.HitPos, model, trace, freeze)
 
 	local min = radio_item:OBBMins()
 	radio_item:SetPos(trace.HitPos - trace.HitNormal * min.z)
@@ -125,16 +121,16 @@ function TOOL.BuildCPanel(panel)
 	})
 
 	panel:AddControl("CheckBox", {
-                Label = "Freeze on spawn?",
-                Description = "Freeze this device on spawn?",
-                Command = "wdrk_freeze"
-        })
-
-	panel:AddControl("CheckBox", {
-		Label = "Transmitter?",
-		Description = "Antenna has built-in transmitter?",
-		Command = "wdrk_tx"
+		Label = "Freeze on spawn?",
+		Description = "Freeze this device on spawn?",
+		Command = "wdrk_freeze"
 	})
+
+--	panel:AddControl("CheckBox", {
+--		Label = "Transmitter?",
+--		Description = "Antenna has built-in transmitter?",
+--		Command = "wdrk_tx"
+--	})
 
 	panel:AddControl("PropSelect", {
 		Label = "Antennae",
