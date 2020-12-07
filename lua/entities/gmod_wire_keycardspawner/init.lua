@@ -7,7 +7,8 @@ ENT.WireDebugName = "KeycardSpawner"
 
 util.PrecacheSound('buttons/button9.wav')
 
-util.PrecacheSound('buttons/button11.wav')
+util.PrecacheSound('buttons/button11.wav'
+)
 
 local MODEL = Model("models/keycardspawner/keycardspawner.mdl")
 function ENT:Initialize()
@@ -43,11 +44,15 @@ function MakeWireKeycard( pl, ang, Pos, lockcode )
 	wire_keycard:SetAngles( ang )
 	wire_keycard:Setup(pl)
 	wire_keycard:SetLockCode(lockcode)
-        wire_keycard:ResetValues()
+    wire_keycard:ResetValues()
 	wire_keycard:Spawn()
+	if CPPI then
+		wire_keycard:CPPISetOwner(self:CPPIGetOwner())
+	end
 	return wire_keycard
 end
 
 function ENT:ShowOutput()
-	self:SetOverlayText("Wire Keycard Spawner\nLock Code: "..self.LockCode)
+	self:SetOverlayText(
+"Wire Keycard Spawner\nLock Code: "..self.LockCode)
 end
