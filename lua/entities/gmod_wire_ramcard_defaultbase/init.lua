@@ -6,7 +6,7 @@ include('shared.lua')
 ENT.WireDebugName = "RAM-card"
 
 function ENT:SetupBase()
-	self:SetModel( "models/cheeze/wire/ram.mdl" )
+	self:SetModel( "models/cheeze/wires/ram.mdl" )
 	self:PhysicsInit( SOLID_VPHYSICS )
 	self:SetMoveType( MOVETYPE_VPHYSICS )
 	self:SetSolid( SOLID_VPHYSICS )
