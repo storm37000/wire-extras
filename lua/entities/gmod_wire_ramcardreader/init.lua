@@ -11,7 +11,7 @@ local CARD_IN_SOCKET_CONSTRAINT_POWER = 2000
 local CARD_IN_ATTACH_RANGE = 3
 
 function ENT:Initialize()
-	self:SetModel( "models/keycardspawner/keycardspawner.mdl" )
+	self:SetModel( "models/wingf0x/altisasocket.mdl" )
 	self:PhysicsInit( SOLID_VPHYSICS )
 	self:SetMoveType( MOVETYPE_VPHYSICS )
 	self:SetSolid( SOLID_VPHYSICS )
@@ -79,7 +79,7 @@ end
 function ENT:PlugCard( card )
 	self.PluggedCard = card
 	card:SetPos( self:GetPos() + self:GetUp() * 5 )
-	card:SetAngles( self:GetAngles() + Angle(90,0,0) )
+	card:SetAngles( self:GetAngles() ) --+ Angle(90,0,0) )
 	
 	self.CardNoCollide = constraint.NoCollide(self, card, 0, 0)
 	if (!self.CardNoCollide) then
