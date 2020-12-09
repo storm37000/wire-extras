@@ -78,7 +78,7 @@ end
 
 function ENT:PlugCard( card )
 	self.PluggedCard = card
-	card:SetPos( self:GetPos() + self:GetUp() * 2 )
+	card:SetPos( self:GetPos() + self:GetUp() * 3 )
 	card:SetAngles( self:GetAngles() ) --+ Angle(90,0,0) )
 	
 	self.CardNoCollide = constraint.NoCollide(self, card, 0, 0)
