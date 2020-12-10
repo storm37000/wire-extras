@@ -26,7 +26,7 @@ end
 
 function ENT:TriggerInput(iname, value)
 	if (iname == "Spawn" and value == 1) then
-                local keycard = MakeWireKeycard(self:GetOwner(), self:GetAngles(), self:GetPos() + (self:GetUp() * 4), self.LockCode)
+                local keycard = MakeWireKeycard(self:CPPIGetOwner(), self:GetAngles(), self:GetPos() + (self:GetUp() * 4), self.LockCode)
 		if (keycard) then
 			self:EmitSound('buttons/button9.wav')
         	else
@@ -47,7 +47,7 @@ function MakeWireKeycard( pl, ang, Pos, lockcode )
     wire_keycard:ResetValues()
 	wire_keycard:Spawn()
 	if CPPI then
-		wire_keycard:CPPISetOwner(self:CPPIGetOwner())
+		wire_keycard:CPPISetOwner(pl)
 	end
 	return wire_keycard
 end
